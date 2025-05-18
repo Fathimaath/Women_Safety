@@ -1,5 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 
 class LiveTrackingScreen extends StatefulWidget {
   const LiveTrackingScreen({super.key});
@@ -9,103 +14,139 @@ class LiveTrackingScreen extends StatefulWidget {
 }
 
 class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
-  String locationMessage = "Current Location: Unknown";
+  LatLng? currentPosition;
+  final MapController mapController = MapController();
 
-  // Method to get the current location
-  Future<void> _getCurrentLocation() async {
-    bool serviceEnabled;
-    LocationPermission permission;
+  @override
+  void initState() {
+    super.initState();
+    _startLiveTracking();
+    sendHelpMessage(); // Sends SOS message on screen load
+  }
 
-    // Check if location services are enabled
-    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+  // 🔄 Live location stream
+  void _startLiveTracking() async {
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
-      setState(() {
-        locationMessage = "Location services are disabled.";
-      });
+      await Geolocator.openLocationSettings();
       return;
     }
 
-    // Check location permissions
-    permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied ||
+        permission == LocationPermission.deniedForever) {
       permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) {
-        setState(() {
-          locationMessage = "Location permissions are denied.";
-        });
+      if (permission != LocationPermission.always &&
+          permission != LocationPermission.whileInUse) {
         return;
       }
     }
 
-    if (permission == LocationPermission.deniedForever) {
+    Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 5, // update every 5 meters
+      ),
+    ).listen((Position pos) {
+      LatLng newPos = LatLng(pos.latitude, pos.longitude);
       setState(() {
-        locationMessage = "Location permissions are permanently denied.";
+        currentPosition = newPos;
       });
-      return;
-    }
 
-    // Get the current position
-    Position position = await Geolocator.getCurrentPosition(
-      desiredAccuracy: LocationAccuracy.high,
-    );
-
-    setState(() {
-      locationMessage = "Latitude: ${position.latitude}, Longitude: ${position.longitude}";
+      // Move the map to follow the user
+      mapController.move(newPos, mapController.zoom);
     });
+  }
+
+  // 📥 Load trusted contact numbers from SharedPreferences
+  Future<List<String>> _loadTrustedContactNumbers() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    List<String>? savedContacts = prefs.getStringList('trustedContacts');
+
+    if (savedContacts != null) {
+      List<String> phoneNumbers =
+          savedContacts
+              .map((c) => json.decode(c)) // decode JSON string
+              .map<String>(
+                (decoded) => decoded['phone'].toString(),
+              ) // get phone
+              .toList();
+      return phoneNumbers;
+    }
+    return [];
+  }
+
+  // 📤 Send SOS to saved trusted contacts
+  void sendHelpMessage() async {
+    try {
+      Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
+      String message =
+          "🚨 I'm in danger. Please help me!\nMy current location: https://maps.google.com/?q=${position.latitude},${position.longitude}";
+
+      List<String> trustedContacts = await _loadTrustedContactNumbers();
+
+      if (trustedContacts.isEmpty) {
+        print("⚠️ No trusted contacts found!");
+        return;
+      }
+
+      String contactsString = trustedContacts.join(',');
+      final Uri smsUri = Uri.parse(
+        'sms:$contactsString?body=${Uri.encodeComponent(message)}',
+      );
+
+      if (await canLaunchUrl(smsUri)) {
+        await launchUrl(smsUri);
+      } else {
+        print("❌ Could not launch SMS to trusted contacts");
+      }
+    } catch (e) {
+      print("❌ Error sending SOS: $e");
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Live Tracking"),
+        title: const Text('Live Tracking'),
         backgroundColor: Colors.pink,
       ),
-      body: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Colors.white, Colors.pink.shade50],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Text(
-              "Live Location Tracking",
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: Colors.pinkAccent,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 20),
-            Text(
-              locationMessage,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 16),
-            ),
-            const SizedBox(height: 30),
-            ElevatedButton(
-              onPressed: _getCurrentLocation,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.pinkAccent,
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
+      body:
+          currentPosition == null
+              ? const Center(child: CircularProgressIndicator())
+              : FlutterMap(
+                mapController: mapController,
+                options: MapOptions(
+                  center: currentPosition,
+                  zoom: 16.0,
+                  interactiveFlags: InteractiveFlag.all,
                 ),
+                children: [
+                  TileLayer(
+                    urlTemplate:
+                        "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+                    userAgentPackageName: 'com.example.hersafe',
+                  ),
+                  MarkerLayer(
+                    markers: [
+                      Marker(
+                        point: currentPosition!,
+                        width: 60,
+                        height: 60,
+                        child: const Icon(
+                          Icons.location_pin,
+                          color: Colors.red,
+                          size: 40,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
-              child: const Text(
-                "Get Current Location",
-                style: TextStyle(fontSize: 16, color: Colors.white),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

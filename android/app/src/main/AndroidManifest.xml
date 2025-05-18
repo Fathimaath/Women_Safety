@@ -4,9 +4,11 @@
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.CALL_PHONE"/>
+    <uses-permission android:name="android.permission.SEND_SMS"/>
+    <uses-permission android:name="android.permission.INTERNET"/>
 
     <application
-        android:label="her_safe"
+        android:label="she_safe"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

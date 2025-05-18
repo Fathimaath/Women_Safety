@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'dart:convert';
 
 class TrustedContactsScreen extends StatefulWidget {
   const TrustedContactsScreen({super.key});
@@ -9,22 +11,51 @@ class TrustedContactsScreen extends StatefulWidget {
 }
 
 class _TrustedContactsScreenState extends State<TrustedContactsScreen> {
-  final List<Map<String, String>> trustedContacts = [
-    {'name': 'Mom', 'phone': '+91 98765 43210'},
-    {'name': 'Dad', 'phone': '+91 98765 43211'},
-    {'name': 'Best Friend', 'phone': '+91 98765 43212'},
-  ];
+  List<Map<String, String>> trustedContacts = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadContacts();
+  }
+
+  // 🔄 Load contacts from SharedPreferences
+  void _loadContacts() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    List<String>? savedContacts = prefs.getStringList('trustedContacts');
+
+    if (savedContacts != null) {
+      setState(() {
+        trustedContacts =
+            savedContacts
+                .map(
+                  (contact) => Map<String, String>.from(json.decode(contact)),
+                )
+                .toList();
+      });
+    }
+  }
+
+  // 💾 Save contacts to SharedPreferences
+  void _saveContacts() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    List<String> contactList =
+        trustedContacts.map((contact) => json.encode(contact)).toList();
+    await prefs.setStringList('trustedContacts', contactList);
+  }
 
   void _addContact(String name, String phone) {
     setState(() {
       trustedContacts.add({'name': name, 'phone': phone});
     });
+    _saveContacts();
   }
 
   void _removeContact(int index) {
     setState(() {
       trustedContacts.removeAt(index);
     });
+    _saveContacts();
   }
 
   Future<void> _makePhoneCall(String phoneNumber) async {

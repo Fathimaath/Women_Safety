@@ -2,16 +2,27 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:carousel_slider/carousel_slider.dart';
 import 'package:audioplayers/audioplayers.dart';
-import 'live_tracking_screen.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 import 'community_forum_screen.dart';
 import 'self_defense_tips_screen.dart';
 import 'trusted_contacts_screen.dart';
 import 'auth_page.dart';
+import 'live_tracking_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  try {
+    await Firebase.initializeApp(); // ✅ Firebase initialization
+  } catch (e) {
+    print("Firebase init error: $e");
+  }
+
   SharedPreferences prefs = await SharedPreferences.getInstance();
   bool isRegistered = prefs.getString('email') != null;
+
   runApp(SheSafeApp(isRegistered: isRegistered));
 }
 
@@ -24,7 +35,8 @@ class SheSafeApp extends StatelessWidget {
     return MaterialApp(
       title: 'She Safe',
       theme: ThemeData(primarySwatch: Colors.pink),
-      home: isRegistered ? HomePage() : AuthPage(),
+      home: isRegistered ? const HomePage() : const AuthPage(),
+      debugShowCheckedModeBanner: false,
     );
   }
 }
@@ -33,7 +45,7 @@ class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
   @override
-  _HomePageState createState() => _HomePageState();
+  State<HomePage> createState() => _HomePageState();
 }
 
 class _HomePageState extends State<HomePage> {
@@ -49,7 +61,7 @@ class _HomePageState extends State<HomePage> {
 
   void _playSiren() async {
     try {
-      await _audioPlayer.stop(); // Stop any previous sound
+      await _audioPlayer.stop();
       await _audioPlayer.play(AssetSource('siren.mp3'));
     } catch (e) {
       print("Error playing siren: $e");
@@ -87,7 +99,6 @@ class _HomePageState extends State<HomePage> {
         ),
         child: SingleChildScrollView(
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               const SizedBox(height: 20),
               const Text(
@@ -156,16 +167,16 @@ class _HomePageState extends State<HomePage> {
                       _playSiren,
                     ),
                     _buildFeatureCard(context, Icons.map, "Live Tracking"),
+                    _buildFeatureCard(
+                      context,
+                      Icons.contacts,
+                      "Trusted Contacts",
+                    ),
                     _buildFeatureCard(context, Icons.group, "Community Forum"),
                     _buildFeatureCard(
                       context,
                       Icons.shield,
                       "Self-Defense Tips",
-                    ),
-                    _buildFeatureCard(
-                      context,
-                      Icons.contacts,
-                      "Trusted Contacts",
                     ),
                   ],
                 ),
@@ -217,7 +228,7 @@ class _HomePageState extends State<HomePage> {
       case "Live Tracking":
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (context) => const LiveTrackingScreen()),
+          MaterialPageRoute(builder: (context) => LiveTrackingScreen()),
         );
         break;
       case "Community Forum":
